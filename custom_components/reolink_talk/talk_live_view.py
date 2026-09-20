@@ -73,22 +73,35 @@ def _issue_token(hass: HomeAssistant, camera_slug: str) -> str:
     return token
 
 
-def _consume_token(hass: HomeAssistant, token: str | None, camera_slug: str | None) -> bool:
+def _consume_token(
+    hass: HomeAssistant,
+    token: str | None,
+    camera_slug: str | None,
+) -> bool:
     """Validate and burn a token. Returns True only for a live, matching token."""
     if not token or not camera_slug:
         return False
+
     store = _token_store(hass)
     _purge_expired(store)
+
     entry = store.get(token)
     if entry is None:
         return False
+
     issued_for, expires_at = entry
+
     if expires_at < time.monotonic():
         return False
+
     # Bound to the camera it was issued for, so a token for a camera you can
     # see can't be replayed against a different one.
-    return secrets.compare_digest(issued_for, camera_slug)
+    if not secrets.compare_digest(issued_for, camera_slug):
+        return False
 
+    # Single-use token: burn it after successful validation.
+    store.pop(token, None)
+    return True
 
 def _iter_camera_slugs(hass: HomeAssistant):
     """Yield (slug, channel, config_entry) for every channel on every configured
